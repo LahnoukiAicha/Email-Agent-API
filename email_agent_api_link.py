@@ -83,16 +83,23 @@ def assign_emails():
         # Create a dummy input file for the first API
         dummy_csv = (
             "id_email;company_name;email;phone_number;location;industry;annual_revenue;engagement_score;email_opens;website_visits;subject;email_text\n"
-            "E008;Brock-Torres;charles74@marquez.info;123456782;418 Garner Crescent, Port Katherineview, ND 61149;Ophthalmologist;$171,689,448;0.26;42;34;E-commerce application help;I wanna integrate einstien chat bot in my commerce application."
+            "E008;Brock-Torres;charles74@marquez.info;123456782;418 Garner Crescent, Port Katherineview, ND 61149;"
+            "Ophthalmologist;$171,689,448;0.26;42;34;E-commerce application help;I wanna integrate einstien chat bot in my commerce application."
         )
         
         # Send POST request to the first API
-        response = requests.post(classification_api_url, files={"file": ("input.csv", dummy_csv)})
+        response = requests.post(classification_api_url, files={"file": ("input.csv", dummy_csv)}, timeout=15)
         
-        if response.status_code != 200:
-            return jsonify({"error": f"Failed to fetch classified emails: {response.status_code} - {response.text}"}), 500
+        # Log the response for debugging
+        print("First API Response Status Code:", response.status_code)
+        print("First API Response Content:", response.text)
 
-        response_data = response.json()
+        # Ensure the response is valid JSON
+        try:
+            response_data = response.json()
+        except ValueError as e:
+            return jsonify({"error": f"Invalid JSON response from first API: {str(e)}", "response": response.text}), 500
+
         if 'classified_emails' not in response_data or not response_data['classified_emails']:
             return jsonify({"error": "No classified emails returned from the first API"}), 500
 
