@@ -13,12 +13,9 @@ class SolutionEmailAgentMatcher:
     def __init__(self):
         self.agent_vectorizer = None
         self.agent_df = None
-        self.SIMILARITY_THRESHOLD = float(os.getenv('SIMILARITY_THRESHOLD', 0.3))  # Configurable threshold
+        self.SIMILARITY_THRESHOLD = 0.3  # Default similarity threshold
 
     def load_agents(self, agent_data):
-        if not agent_data or not isinstance(agent_data, list):
-            raise ValueError("Invalid agent data. Expected a non-empty list.")
-        
         self.agent_df = pd.DataFrame(agent_data)
         required_columns = ['Agent_ID', 'Agent_Name', 'Skills', 'Availability', 'Experience_Level', 'Performance_Score']
         if not all(col in self.agent_df.columns for col in required_columns):
@@ -70,26 +67,41 @@ class SolutionEmailAgentMatcher:
 @app.route('/assign_emails', methods=['POST'])
 def assign_emails():
     try:
-        # Validate input
-        input_data = request.get_json()
-        classified_emails = input_data.get('classified_emails', [])
-        agent_data = input_data.get('agents', [])
+        # Load agents data from request
+        agent_data = request.get_json().get('agents', [])
+        if not agent_data or not isinstance(agent_data, list):
+            return jsonify({"error": "Invalid agent data provided. Expecting a list of agents."}), 400
 
-        if not classified_emails or not agent_data:
-            return jsonify({"error": "Missing classified_emails or agents in input"}), 400
-
-        # Load agents and classified emails
+        # Load agents
         matcher = SolutionEmailAgentMatcher()
         matcher.load_agents(agent_data)
-        email_df = pd.DataFrame(classified_emails)
 
-        # Check required columns in email data
-        required_columns = ['id_email', 'Predicted_Solution', 'Lead_Score']
-        if not all(col in email_df.columns for col in required_columns):
-            return jsonify({"error": "Missing required columns in classified emails"}), 400
+        # Call the first API to fetch classified emails
+        classification_api_url = os.getenv('CLASSIFICATION_API_URL', 'https://email-classification-api.onrender.com/classify-emails')
+        print(f"Fetching classified emails from: {classification_api_url}")
+
+        # Create a dummy input file for the first API
+        dummy_csv = (
+            "id_email;company_name;email;phone_number;location;industry;annual_revenue;engagement_score;email_opens;website_visits;subject;email_text\n"
+            "E008;Brock-Torres;charles74@marquez.info;123456782;418 Garner Crescent, Port Katherineview, ND 61149;Ophthalmologist;$171,689,448;0.26;42;34;E-commerce application help;I wanna integrate einstien chat bot in my commerce application."
+        )
+        
+        # Send POST request to the first API
+        response = requests.post(classification_api_url, files={"file": ("input.csv", dummy_csv)})
+        
+        if response.status_code != 200:
+            return jsonify({"error": f"Failed to fetch classified emails: {response.status_code} - {response.text}"}), 500
+
+        response_data = response.json()
+        if 'classified_emails' not in response_data or not response_data['classified_emails']:
+            return jsonify({"error": "No classified emails returned from the first API"}), 500
+
+        # Load classified emails into a DataFrame
+        email_df = pd.DataFrame(response_data['classified_emails'])
 
         # Assign emails to agents
         assignments = matcher.assign_emails_to_agents(email_df)
+
         print(f"Number of emails assigned: {len(assignments)}")
         return jsonify(assignments.to_dict(orient='records'))
 
@@ -97,5 +109,4 @@ def assign_emails():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5001))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(port=5001, debug=True)
