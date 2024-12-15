@@ -13,7 +13,7 @@ class SolutionEmailAgentMatcher:
     def __init__(self):
         self.agent_vectorizer = None
         self.agent_df = None
-        self.SIMILARITY_THRESHOLD = 0.3  # Default similarity threshold
+        self.SIMILARITY_THRESHOLD = 0.3
 
     def load_agents(self, agent_data):
         self.agent_df = pd.DataFrame(agent_data)
@@ -53,67 +53,51 @@ class SolutionEmailAgentMatcher:
                         'Email_Score': email['Lead_Score'],
                         'Agent_Score': agent['Agent_Score']
                     })
-                else:
-                    assignments.append({
-                        'id_email': email['id_email'],
-                        'solution': solution,
-                        'Agent_ID': None,
-                        'Agent_Name': "No available agent",
-                        'Email_Score': email['Lead_Score'],
-                        'Agent_Score': None
-                    })
         return pd.DataFrame(assignments)
 
 @app.route('/assign_emails', methods=['POST'])
 def assign_emails():
     try:
-        # Load agents data from request
+        # Load agents from request
         agent_data = request.get_json().get('agents', [])
         if not agent_data or not isinstance(agent_data, list):
-            return jsonify({"error": "Invalid agent data provided. Expecting a list of agents."}), 400
+            return jsonify({"error": "No agents data provided or invalid format"}), 400
 
-        # Load agents
+        # Load agents into matcher
         matcher = SolutionEmailAgentMatcher()
         matcher.load_agents(agent_data)
 
-        # Call the first API to fetch classified emails
-        classification_api_url = os.getenv('CLASSIFICATION_API_URL', 'https://email-classification-api.onrender.com/classify-emails')
+        # Fetch classified emails from the first API
+        classification_api_url = os.getenv('CLASSIFICATION_API_URL', 'http://localhost:5000/classify-emails')
         print(f"Fetching classified emails from: {classification_api_url}")
 
-        # Create a dummy input file for the first API
-        dummy_csv = (
-            "id_email;company_name;email;phone_number;location;industry;annual_revenue;engagement_score;email_opens;website_visits;subject;email_text\n"
-            "E008;Brock-Torres;charles74@marquez.info;123456782;418 Garner Crescent, Port Katherineview, ND 61149;"
-            "Ophthalmologist;$171,689,448;0.26;42;34;E-commerce application help;I wanna integrate einstien chat bot in my commerce application."
-        )
-        
-        # Send POST request to the first API
-        response = requests.post(classification_api_url, files={"file": ("input.csv", dummy_csv)}, timeout=15)
-        
-        # Log the response for debugging
+        # Call the first API
+        response = requests.get(classification_api_url, timeout=60)
         print("First API Response Status Code:", response.status_code)
         print("First API Response Content:", response.text)
 
-        # Ensure the response is valid JSON
-        try:
-            response_data = response.json()
-        except ValueError as e:
-            return jsonify({"error": f"Invalid JSON response from first API: {str(e)}", "response": response.text}), 500
+        if response.status_code != 200:
+            return jsonify({"error": f"First API returned status {response.status_code}", "details": response.text}), 500
 
+        response_data = response.json()
         if 'classified_emails' not in response_data or not response_data['classified_emails']:
-            return jsonify({"error": "No classified emails returned from the first API"}), 500
+            return jsonify({"error": "No classified emails found in the response"}), 500
 
-        # Load classified emails into a DataFrame
+        # Convert classified emails to a DataFrame
         email_df = pd.DataFrame(response_data['classified_emails'])
 
         # Assign emails to agents
         assignments = matcher.assign_emails_to_agents(email_df)
 
-        print(f"Number of emails assigned: {len(assignments)}")
+        # Return assignments as JSON
         return jsonify(assignments.to_dict(orient='records'))
 
+    except requests.exceptions.Timeout:
+        return jsonify({"error": "Request to the first API timed out"}), 504
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": f"Failed to fetch classified emails: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    app.run(port=5001, debug=True)
+    app.run(host='0.0.0.0', port=int(os.getenv("PORT", 5001)), debug=True)
