@@ -78,10 +78,15 @@ def assign_emails():
         matcher = SolutionEmailAgentMatcher()
         matcher.load_agents(agent_data)
 
-        # Fetch classified emails
+        # Fetch classified emails via POST request
         classification_api_url = os.getenv('CLASSIFICATION_API_URL', 'http://localhost:5000/classify-emails')
         print(f"Fetching classified emails from: {classification_api_url}")
-        response = requests.get(classification_api_url)
+
+        # Simulate a POST request to fetch data
+        dummy_csv = (
+            "id_email,subject,email_text,annual_revenue,engagement_score,email_opens,website_visits\n"
+        )  # An empty placeholder CSV file
+        response = requests.post(classification_api_url, files={"file": ("dummy.csv", dummy_csv)})
 
         if response.status_code != 200:
             return jsonify({"error": f"Failed to fetch classified emails: {response.status_code} - {response.text}"}), 500
