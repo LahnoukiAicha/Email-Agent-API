@@ -70,32 +70,23 @@ class SolutionEmailAgentMatcher:
 @app.route('/assign_emails', methods=['POST'])
 def assign_emails():
     try:
-        # Load agents and validate input
-        agent_data = request.get_json().get('agents', [])
-        if not agent_data or not isinstance(agent_data, list):
-            return jsonify({"error": "Invalid agent data provided. Expecting a list of agents."}), 400
+        # Validate input
+        input_data = request.get_json()
+        classified_emails = input_data.get('classified_emails', [])
+        agent_data = input_data.get('agents', [])
 
+        if not classified_emails or not agent_data:
+            return jsonify({"error": "Missing classified_emails or agents in input"}), 400
+
+        # Load agents and classified emails
         matcher = SolutionEmailAgentMatcher()
         matcher.load_agents(agent_data)
+        email_df = pd.DataFrame(classified_emails)
 
-        # Fetch classified emails via POST request
-        classification_api_url = os.getenv('CLASSIFICATION_API_URL', 'http://localhost:5000/classify-emails')
-        print(f"Fetching classified emails from: {classification_api_url}")
-
-        # Simulate a POST request to fetch data
-        dummy_csv = (
-            "id_email,subject,email_text,annual_revenue,engagement_score,email_opens,website_visits\n"
-        )  # An empty placeholder CSV file
-        response = requests.post(classification_api_url, files={"file": ("dummy.csv", dummy_csv)})
-
-        if response.status_code != 200:
-            return jsonify({"error": f"Failed to fetch classified emails: {response.status_code} - {response.text}"}), 500
-
-        response_data = response.json()
-        if 'classified_emails' not in response_data or not response_data['classified_emails']:
-            return jsonify({"error": "No classified emails found in the response"}), 500
-
-        email_df = pd.DataFrame(response_data['classified_emails'])
+        # Check required columns in email data
+        required_columns = ['id_email', 'Predicted_Solution', 'Lead_Score']
+        if not all(col in email_df.columns for col in required_columns):
+            return jsonify({"error": "Missing required columns in classified emails"}), 400
 
         # Assign emails to agents
         assignments = matcher.assign_emails_to_agents(email_df)
