@@ -58,33 +58,24 @@ class SolutionEmailAgentMatcher:
 @app.route('/assign_emails', methods=['POST'])
 def assign_emails():
     try:
-        # Load agents from request
-        agent_data = request.get_json().get('agents', [])
+        data = request.get_json()
+        agent_data = data.get('agents', [])
+        classified_emails = data.get('classified_emails', [])
+
         if not agent_data or not isinstance(agent_data, list):
             return jsonify({"error": "No agents data provided or invalid format"}), 400
+
+        if not classified_emails or not isinstance(classified_emails, list):
+            return jsonify({"error": "No classified_emails data provided or invalid format"}), 400
 
         # Load agents into matcher
         matcher = SolutionEmailAgentMatcher()
         matcher.load_agents(agent_data)
 
-        # Fetch classified emails from the first API
-        classification_api_url = os.getenv('CLASSIFICATION_API_URL', 'https://email-classification-api.onrender.com/classify-emails')
-        print(f"Fetching classified emails from: {classification_api_url}")
-
-        # Call the first API
-        response = requests.get(classification_api_url, timeout=60)
-        print("First API Response Status Code:", response.status_code)
-        print("First API Response Content:", response.text)
-
-        if response.status_code != 200:
-            return jsonify({"error": f"First API returned status {response.status_code}", "details": response.text}), 500
-
-        response_data = response.json()
-        if 'classified_emails' not in response_data or not response_data['classified_emails']:
-            return jsonify({"error": "No classified emails found in the response"}), 500
-
         # Convert classified emails to a DataFrame
-        email_df = pd.DataFrame(response_data['classified_emails'])
+        email_df = pd.DataFrame(classified_emails)
+        if email_df.empty:
+            return jsonify({"error": "classified_emails data is empty"}), 400
 
         # Assign emails to agents
         assignments = matcher.assign_emails_to_agents(email_df)
@@ -92,10 +83,6 @@ def assign_emails():
         # Return assignments as JSON
         return jsonify(assignments.to_dict(orient='records'))
 
-    except requests.exceptions.Timeout:
-        return jsonify({"error": "Request to the first API timed out"}), 504
-    except requests.exceptions.RequestException as e:
-        return jsonify({"error": f"Failed to fetch classified emails: {str(e)}"}), 500
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
