@@ -68,7 +68,7 @@ def assign_emails():
         matcher.load_agents(agent_data)
 
         # Fetch classified emails from the first API
-        classification_api_url = os.getenv('CLASSIFICATION_API_URL', 'http://localhost:5000/classify-emails')
+        classification_api_url = os.getenv('CLASSIFICATION_API_URL', 'https://email-classification-api.onrender.com/classify-emails')
         print(f"Fetching classified emails from: {classification_api_url}")
 
         # Call the first API
